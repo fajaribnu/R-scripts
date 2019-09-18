@@ -1,0 +1,81 @@
+library(tidyr)
+library(tidyverse)
+library(RCurl)
+library(readr)
+library(DataExplorer)
+library(dplyr)
+library(ggplot2)
+library(caret)
+library(car)
+
+url <- getURL("https://raw.githubusercontent.com/arikunco/machinelearning/master/dataset/HR_comma_sep.csv")
+ds <- read.csv(text = url)
+
+# Count Active and Inactive employees
+ds %>% 
+  count(left)
+# Calculate turnover rate
+ds %>% 
+  summarize(avg_turnover_rate = mean(left))
+# Calculate level wise turnover rate
+df_level <- ds %>% 
+  group_by(sales) %>% 
+  summarize(turnover_level = mean(left))
+
+ds_mgt <- ds %>%
+  filter(sales %in% c('management', 'product_mng'))
+
+# Check the results
+df_level
+# Visualize the results
+ggplot(df_level, aes(x = sales, y = turnover_level)) + 
+  geom_col()
+
+# Set seed of 567
+set.seed(567)
+# Store row numbers for training dataset: index_train
+index_train <- createDataPartition(ds$left, p = 0.7, list = FALSE)
+# Create training dataset: train_set
+train_set <- ds[index_train, ]
+# Create testing dataset: test_set
+test_set <- ds[-index_train, ]
+
+# Calculate turnover proportion in train_set
+train_set %>% 
+  count(left) %>% 
+  mutate(prop = n / sum(n))
+# Calculate turnover proportion in test_set
+test_set %>% 
+  count(left) %>% 
+  mutate(prop = n / sum(n))
+
+# Build a multiple logistic regression model (training)
+multi_log <- glm(left ~ satisfaction_level + last_evaluation + number_project + average_montly_hours 
+                 + time_spend_company + Work_accident + promotion_last_5years + salary, 
+                 family = "binomial", data = train_set)
+# Print summary
+summary(multi_log)
+# Check for multicollinearity
+vif(multi_log)
+
+# Remove independent variable in which GVIF value above 5
+
+# Make predictions for training dataset
+prediction_train <- predict(multi_log, newdata = train_set, 
+                            type = "response")
+# Look at the prediction range
+hist(prediction_train)
+
+# Make predictions for testing dataset
+prediction_test <- predict(multi_log, newdata = test_set, 
+                            type = "response")
+# Look at the prediction range
+hist(prediction_test)
+
+# Classify predictions using a cut-off of 0.5
+prediction_categories <- ifelse(prediction_test > 0.5, 1, 0)
+# Construct a confusion matrix
+conf_matrix <- table(prediction_categories, test_set$left)
+conf_matrix
+
+confusionMatrix(conf_matrix)
